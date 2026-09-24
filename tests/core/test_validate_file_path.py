@@ -135,3 +135,36 @@ def test_validate_file_path_blocks_dot_env_variant_anywhere(monkeypatch, tmp_pat
 
     with pytest.raises(ValueError, match="\\.env files may contain secrets"):
         validate_file_path(str(secret_file))
+
+
+def test_validate_file_path_blocks_credentials_dir_even_if_allowlisted(
+    monkeypatch, tmp_path
+):
+    storage_dir = tmp_path / "attachments"
+    storage_dir.mkdir()
+    monkeypatch.setattr(attachment_storage, "STORAGE_DIR", storage_dir)
+    creds_dir = tmp_path / "creds"
+    creds_dir.mkdir()
+    token_file = creds_dir / "victim@example.com.json"
+    token_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("ALLOWED_FILE_DIRS", str(tmp_path))
+    monkeypatch.setenv("WORKSPACE_MCP_CREDENTIALS_DIR", str(creds_dir))
+
+    with pytest.raises(ValueError, match="OAuth credentials directory"):
+        validate_file_path(str(token_file))
+
+
+def test_validate_file_path_blocks_default_token_store(monkeypatch, tmp_path):
+    storage_dir = tmp_path / "attachments"
+    storage_dir.mkdir()
+    monkeypatch.setattr(attachment_storage, "STORAGE_DIR", storage_dir)
+    monkeypatch.delenv("WORKSPACE_MCP_CREDENTIALS_DIR", raising=False)
+    monkeypatch.delenv("GOOGLE_MCP_CREDENTIALS_DIR", raising=False)
+    creds_dir = tmp_path / ".google_workspace_mcp" / "credentials"
+    creds_dir.mkdir(parents=True)
+    token_file = creds_dir / "victim@example.com.json"
+    token_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("ALLOWED_FILE_DIRS", str(tmp_path))
+
+    with pytest.raises(ValueError, match="secrets or credentials"):
+        validate_file_path(str(token_file))

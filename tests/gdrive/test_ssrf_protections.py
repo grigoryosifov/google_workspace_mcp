@@ -49,6 +49,27 @@ async def test_resolve_and_validate_host_rejects_ipv6_private(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_resolve_and_validate_host_rejects_nat64_embedded_private(monkeypatch):
+    """NAT64 addresses wrapping a metadata/private IPv4 target must be rejected."""
+
+    def fake_getaddrinfo(hostname, port):
+        return [
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("64:ff9b::a9fe:a9fe", 0, 0, 0),
+            )
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+
+    with pytest.raises(ValueError, match="private/internal networks"):
+        await http_utils.resolve_and_validate_host("nat64-metadata.example")
+
+
+@pytest.mark.asyncio
 async def test_resolve_and_validate_host_deduplicates_addresses(monkeypatch):
     """Duplicate DNS answers should be de-duplicated while preserving order."""
 

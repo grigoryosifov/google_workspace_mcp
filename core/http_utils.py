@@ -18,6 +18,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+_NAT64_PREFIX = ipaddress.IPv6Network("64:ff9b::/96")
+
 
 class SSRFFetchError(RuntimeError):
     """Raised when SSRF-safe fetching fails after validation succeeds."""
@@ -72,6 +74,10 @@ async def resolve_and_validate_host(hostname: str) -> list[str]:
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         ip_str = sockaddr[0]
         ip = ipaddress.ip_address(ip_str)
+        # NAT64 (64:ff9b::/96) addresses embed an IPv4 target that is_global
+        # does not inspect, e.g. 64:ff9b::a9fe:a9fe -> 169.254.169.254.
+        if ip.version == 6 and ip in _NAT64_PREFIX:
+            ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
         if not ip.is_global:
             raise ValueError(
                 f"URLs pointing to private/internal networks are not allowed: "

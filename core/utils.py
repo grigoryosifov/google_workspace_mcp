@@ -325,12 +325,26 @@ def validate_file_path(file_path: str) -> Path:
                 "path is in a restricted system location."
             )
 
-    # Block sensitive directories that commonly contain credentials/keys.
-    if ".ssh" in path_parts or ".aws" in path_parts:
+    # Block sensitive directories that commonly contain credentials/keys,
+    # including this server's own OAuth token store.
+    if any(part in (".ssh", ".aws", ".google_workspace_mcp") for part in path_parts):
         raise ValueError(
             f"Access to '{resolved_str}' is not allowed: "
             "path is in a directory that commonly contains secrets or credentials."
         )
+
+    # Block the configured OAuth credentials directory even when an operator's
+    # ALLOWED_FILE_DIRS happens to contain it.
+    for env_name in ("WORKSPACE_MCP_CREDENTIALS_DIR", "GOOGLE_MCP_CREDENTIALS_DIR"):
+        creds_dir = os.environ.get(env_name, "").strip()
+        if not creds_dir:
+            continue
+        blocked = Path(creds_dir).expanduser().resolve()
+        if resolved == blocked or blocked in resolved.parents:
+            raise ValueError(
+                f"Access to '{resolved_str}' is not allowed: "
+                "path is in the server's OAuth credentials directory."
+            )
 
     home = Path.home()
     sensitive_home_dirs = (

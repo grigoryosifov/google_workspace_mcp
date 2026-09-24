@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import stat
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Optional
@@ -121,6 +122,19 @@ class LocalDirectoryCredentialStore(CredentialStore):
         )
 
     @staticmethod
+    def _restrict_permissions(path: str, mode: int) -> None:
+        """Drop group/other access from a path created by an older version."""
+        if os.name != "posix":
+            return
+        try:
+            current = stat.S_IMODE(os.stat(path).st_mode)
+            if current & 0o077:
+                os.chmod(path, mode)
+                logger.info(f"Restricted permissions on {path} to {oct(mode)}")
+        except OSError as e:
+            logger.warning(f"Could not restrict permissions on {path}: {e}")
+
+    @staticmethod
     def _legacy_safe_email(user_email: str) -> str:
         """Return the pre-URL-encoding filename form for backward compatibility."""
         return re.sub(r"[^a-zA-Z0-9@._-]", "_", user_email)
@@ -152,6 +166,8 @@ class LocalDirectoryCredentialStore(CredentialStore):
         if not os.path.exists(self.base_dir):
             os.makedirs(self.base_dir, mode=0o700, exist_ok=True)
             logger.info(f"Created credentials directory: {self.base_dir}")
+        else:
+            self._restrict_permissions(self.base_dir, 0o700)
 
         safe_email = quote(user_email, safe="@._-")
         creds_path = self._resolve_credential_path(f"{safe_email}{self.FILE_EXTENSION}")
@@ -181,6 +197,8 @@ class LocalDirectoryCredentialStore(CredentialStore):
         if not os.path.exists(creds_path):
             logger.debug(f"No credential file found for {user_email} at {creds_path}")
             return None
+
+        self._restrict_permissions(creds_path, 0o600)
 
         try:
             with open(creds_path, "r") as f:
@@ -233,6 +251,10 @@ class LocalDirectoryCredentialStore(CredentialStore):
         try:
             fd = os.open(str(creds_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as f:
+                # O_CREAT's mode only applies to new files; tighten files
+                # written by older versions before any token lands in them.
+                if os.name == "posix":
+                    os.fchmod(f.fileno(), 0o600)
                 json.dump(creds_data, f, indent=2)
             logger.info(f"Stored credentials for {user_email} to {creds_path}")
             return True

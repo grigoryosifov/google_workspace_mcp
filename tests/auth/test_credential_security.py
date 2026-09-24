@@ -193,3 +193,42 @@ class TestPathTraversal:
             "user+admin@example.com",
             "user_admin@example.com",
         ]
+
+
+class TestLegacyPermissionTightening:
+    """Files and directories written by older versions get tightened."""
+
+    def test_store_tightens_existing_world_readable_file(self, cred_store):
+        os.makedirs(cred_store.base_dir, mode=0o755)
+        os.chmod(cred_store.base_dir, 0o755)
+        cred_path = os.path.join(
+            cred_store.base_dir, f"user@example.com{CredentialStore.FILE_EXTENSION}"
+        )
+        with open(cred_path, "w") as f:
+            f.write("{}")
+        os.chmod(cred_path, 0o644)
+
+        mock_creds = MagicMock()
+        mock_creds.token = "tok"
+        mock_creds.refresh_token = "rtok"
+        mock_creds.token_uri = "https://oauth2.googleapis.com/token"
+        mock_creds.client_id = "cid"
+        mock_creds.client_secret = "csec"
+        mock_creds.scopes = ["openid"]
+        mock_creds.expiry = None
+
+        assert cred_store.store_credential("user@example.com", mock_creds) is True
+        assert stat.S_IMODE(os.stat(cred_path).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(cred_store.base_dir).st_mode) == 0o700
+
+    def test_get_tightens_existing_world_readable_file(self, cred_store):
+        os.makedirs(cred_store.base_dir)
+        cred_path = os.path.join(
+            cred_store.base_dir, f"user@example.com{CredentialStore.FILE_EXTENSION}"
+        )
+        with open(cred_path, "w") as f:
+            json.dump({"token": "tok", "refresh_token": "rtok"}, f)
+        os.chmod(cred_path, 0o644)
+
+        cred_store.get_credential("user@example.com")
+        assert stat.S_IMODE(os.stat(cred_path).st_mode) == 0o600
