@@ -467,8 +467,8 @@ def _should_auto_open_browser() -> bool:
     auto-opening useful. WORKSPACE_MCP_NO_BROWSER=true turns it off for setups
     where the default browser is the wrong place: a server driven over SSH or a
     remote desktop, a headless box, or a machine where the consent is completed
-    in a different browser profile. The URL is still logged and returned, so the
-    flow is unchanged apart from the automatic open.
+    in a different browser profile. The URL is still returned in the tool result,
+    so the flow is unchanged apart from the automatic open.
     """
     if os.getenv("WORKSPACE_MCP_NO_BROWSER", "").strip().lower() in {
         "1",
